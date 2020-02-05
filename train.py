@@ -14,6 +14,7 @@ from torch import optim
 from torchvision import transforms
 
 import matplotlib.pyplot as plt
+from PIL import Image
 
 from model import UNet
 from dataloader import DataLoader
@@ -25,15 +26,28 @@ def train_net(net,
               lr=0.1,
               val_percent=0.1,
               save_cp=True,
-              gpu=False):
+              gpu=True):
+    
+    ## path to save images
+    output_dir = 'samples/'
+    train_groundtruth = os.path.join(output_dir, 'train_groundtruth')
+    train_input = os.path.join(output_dir, 'train_input')
+    train_output = os.path.join(output_dir, 'train_output')
+    
+    test_groundtruth = os.path.join(output_dir, 'test_groundtruth')
+    test_input = os.path.join(output_dir, 'test_input')
+    test_output = os.path.join(output_dir, 'test_output')
+    
+    
+    # load data
     loader = DataLoader(data_dir)
 
-    #N_train = loader.n_train()
-    N_train = 1
+    N_train = loader.n_train()
+    #N_train = 1
  
     ## change to adam 
     optimizer = optim.Adam(net.parameters(), 
-                           lr=lr,
+                           #lr=lr,
                            #momentum=0.99,
                            weight_decay=0.0005)
 
@@ -45,73 +59,102 @@ def train_net(net,
         loader.setMode('train')
 
         epoch_loss = 0
-
-        for i, (img,label) in enumerate(loader):
-            shape = img.shape  
+        
+        ## load data
+        (img, label) = enumerate(loader)
+        
+        image = torch.tensor(img)   # [160,4,128,128]
+        label = torch.tensor(label) # [160,3,128,128]
+        
+        if gpu:
+            image = image.cuda()
+            label = label.cuda()
+        
+        batch = 16
+        
+        for i in range(0, int(N_train/batch)):
+            ## get inputs x with batch 16 [16,4,128,128] [16,3,128,128]
+            train_x = image[i*batch:(i+1)*batch,:,:,:]
+            train_y = label[i*batch:(i+1)*batch,:,:,:]
             
-            image = torch.tensor(img)   # [1,4,128,128]
-            label = torch.tensor(label) # [1,3,128,128]
-
-            if gpu:
-                image = image.cuda()
-                label = label.cuda()
+            pred = net(train_x.float()) 
             
-            pred_label = net(image.float()) 
-            #label = torch.tensor(label)
-
-            #pred_label = pred_label.reshape((pred_label.size(1), pred_label.size(2), pred_label.size(3)))
-            #label = label.resize_(256,256)
-            #label = label.reshape((1, label.size(0), label.size(1)))
-            
-            #print(pred_label.size()) # torch.Size([2, 256, 256])       
-            #print(label.size()) #torch.Size([1, 256, 256])
             optimizer.zero_grad()
-            
-            loss = optimizer(pred_label, label)
-            
+            loss = optimizer(pred, train_y)
             loss.backward()
-
-            #epoch_loss += loss.item()
-            
+            epoch_loss += loss.item()
             optimizer.step()
- 
-            print('Training sample %d / %d - Loss: %.6f' % (i+1, N_train, loss.item()))
-
-            # optimize weights
-
-        #torch.save(net.state_dict(), join(data_dir, 'checkpoints') + '/CP%d.pth' % (epoch + 1))
-        print('Checkpoint %d saved !' % (epoch + 1))
+            
+            print('Training sample %d / %d - Loss: %.6f' % ((i+1)*batch, N_train, loss.item()))
         print('Epoch %d finished! - Loss: %.6f' % (epoch+1, epoch_loss / i))
-    
+        
     print('End of training. Time Taken: %d sec.' % (time.time() - training_time))
-
+    
+    Image.fromarray(label[-1,:,:,:].astype('uint8')).save(train_groundtruth)
+    Image.fromarray(image[-1,:,:,:].astype('uint8')).save(train_input)
+    Image.fromarray(pred[-1,:,:,:].astype('uint8')).save(train_output)
+        
+    
     # displays test images with original and predicted masks after training
     loader.setMode('test')
     net.eval()
     with torch.no_grad():
-        for _, (img, label) in enumerate(loader):
-            shape = img.shape
-            img_torch = torch.from_numpy(img.reshape(1,1,shape[0],shape[1])).float()
-            if gpu:
-                img_torch = img_torch.cuda()
-            pred = net(img_torch)
-            pred_sm = softmax(pred)
-            _,pred_label = torch.max(pred_sm,1)
+        (img, label) = enumerate(loader)
+        
+        img_torch = torch.tensor(img) # [6,4,128,128]
+        if gpu:
+            img_test = img_torch.cuda()
+        
+        
+        pred_test = net(img_test)  # [6,3,128,128]
+        
+        # plot test result
+        for j in range(len(img)):
+            self.plot(img[j,:,:,:], label[j,:,:,:], pred[j,:,:,:])
+        
+    Image.fromarray(label[-1,:,:,:].astype('uint8')).save(test_groundtruth)
+    Image.fromarray(img_test[-1,:,:,:].astype('uint8')).save(test_input)
+    Image.fromarray(pred_test[-1,:,:,:].astype('uint8')).save(test_output)
 
-            plt.subplot(1, 3, 1)
-            plt.imshow(img*255.)
-            plt.subplot(1, 3, 2)
-            plt.imshow(label*255.)
-            plt.subplot(1, 3, 3)
-            plt.imshow(pred_label.cpu().detach().numpy().squeeze()*255.)
-            plt.show()
+        
+    def plot(self, img, label, pred):
+        plt.subplot(1, 3, 1)
+        plt.imshow(img*255.)
+        plt.subplot(1, 3, 2)
+        plt.imshow(label*255.)
+        plt.subplot(1, 3, 3)
+        plt.imshow(pred.cpu().detach().numpy().squeeze()*255.)
+        plt.show()
+        
+        
+        
+        
+        
+        
+        
+        # for _, (img, label) in enumerate(loader):
+        #     shape = img.shape
+        #     img_torch = torch.from_numpy(img.reshape(1,1,shape[0],shape[1])).float()
+        #     if gpu:
+        #         img_torch = img_torch.cuda()
+        #     pred = net(img_torch)
+        #     pred_sm = softmax(pred)
+        #     _,pred_label = torch.max(pred_sm,1)
 
-def getLoss(pred_label, target_label):
+        #     plt.subplot(1, 3, 1)
+        #     plt.imshow(img*255.)
+        #     plt.subplot(1, 3, 2)
+        #     plt.imshow(label*255.)
+        #     plt.subplot(1, 3, 3)
+        #     plt.imshow(pred_label.cpu().detach().numpy().squeeze()*255.)
+        #     plt.show()
+
+#def getLoss(pred_label, target_label):
     p = softmax(pred_label)
     #print(p.size())
     return cross_entropy(p, target_label)
 
-def softmax(input):
+#def softmax(input):
     # todo: implement softmax function
     #input = input.resize_((2, input.size(2), input.size(3)))
     exp = torch.exp(input)
@@ -121,7 +164,7 @@ def softmax(input):
     
     return p
 
-def cross_entropy(input, targets):
+#def cross_entropy(input, targets):
     # todo: implement cross entropy
     # Hint: use the choose function
     
@@ -136,7 +179,7 @@ def cross_entropy(input, targets):
     return ce
 
 # Workaround to use numpy.choose() with PyTorch
-def choose(pred_label, true_labels):
+#def choose(pred_label, true_labels):
     size = pred_label.size()
     ind = np.empty([size[2]*size[3],3], dtype=int)
     i = 0
@@ -151,7 +194,7 @@ def choose(pred_label, true_labels):
     
 def get_args():
     parser = OptionParser()
-    parser.add_option('-e', '--epochs', dest='epochs', default=1, type='int', help='number of epochs')
+    parser.add_option('-e', '--epochs', dest='epochs', default=100, type='int', help='number of epochs')
     parser.add_option('-c', '--n-classes', dest='n_classes', default=3, type='int', help='number of classes')
     parser.add_option('-d', '--data-dir', dest='data_dir', default='data/', help='data directory')
     parser.add_option('-g', '--gpu', action='store_true', dest='gpu', default=False, help='use cuda')

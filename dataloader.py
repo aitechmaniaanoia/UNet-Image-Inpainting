@@ -10,6 +10,8 @@ import torch
 from torchvision import transforms
 from matplotlib import cm
 
+import matplotlib.pyplot as plt
+
 class DataLoader():
     def __init__(self, root_dir='data', batch_size=2):
         self.batch_size = batch_size
@@ -30,9 +32,12 @@ class DataLoader():
 
         if self.mode == 'train':
             current = 1
+            crop_num = 80
             #endId = n_train
+            
         elif self.mode == 'test':
             current = 0
+            crop_num = 3
             #endId = len(self.data_files)
             
         image = Image.open(self.data_files[current])
@@ -43,7 +48,8 @@ class DataLoader():
         
         image = np.array(image)  # [870,430,3]
         
-        crop_num = 50
+        inputs = [] 
+        outputs = [] 
         
         for i in range(0, crop_num):
             # crop small patch
@@ -73,7 +79,7 @@ class DataLoader():
             
             output2 = np.array(transform(data_image))
             # normalize to [0,1]
-            output2 = output2 / np.max(output2)  # [128,128,3]
+            output2 = output2 / np.max(output2)  # [3,128,128]
             
             # convert to [3,128,128]
             output2 = np.resize(output2,(1,3,crop_l,crop_w))
@@ -83,10 +89,17 @@ class DataLoader():
             input1 = self.addrandomhole(output1)
             input2 = self.addrandomhole(output2)
             
-            yield (input1, output1) # [1,4,128,128] [1,3,128,128]
-            yield (input2, output2)
-        
-        
+            inputs.append(input1)
+            inputs.append(input2)
+            
+            outputs.append(output1)
+            outputs.append(output2)
+            
+            #yield (input1, output1) 
+            #yield (input2, output2)
+        return (inputs, outputs)  # [160,4,128,128] [160,3,128,128] 
+    
+    
     def addrandomhole(self, image): 
         # image [1,3,128,128] RGB
         # result [1,4,128,128] RGB with mask
@@ -129,5 +142,5 @@ class DataLoader():
         self.mode = mode
 
     def n_train(self):
-        data_length = len(self.output1)*2
-        return np.int_(data_length - np.floor(data_length * self.test_percent))
+        data_length = len(self.outputs)
+        return data_length
