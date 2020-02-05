@@ -7,7 +7,6 @@ class UNet(nn.Module):
         super(UNet, self).__init__()
         # todo
         # Hint: Do not use ReLU in last convolutional set of up-path (128-64-64) for stability reasons!
-        #self.down = downstep(n_classes,64)
         self.down1 = downStep(4, 64) 
         self.down2 = downStep(64, 128) 
         self.down3 = downStep(128, 256) 
@@ -49,17 +48,14 @@ class downStep(nn.Module):
         self.conv1 = nn.Conv2d(inC, outC, kernel_size = 3, padding = 1)
         self.conv2 = nn.Conv2d(outC, outC, kernel_size = 3, padding = 1)
         
-       # self.bn = nn.BatchNorm2d(outC)
-        
         self.maxpool = nn.MaxPool2d( kernel_size = 2, stride = 2)
         
     def forward(self, x):
         # todo
         x = F.relu(self.conv1(x))
-        #x = self.bn(x)
+
         x_down = F.relu(self.conv2(x))
-        #print(x_down.size())
-        #x = self.bn(x)
+
         x = self.maxpool(x_down)
         
         return x, x_down
@@ -80,18 +76,13 @@ class upStep(nn.Module):
     def forward(self, x, x_down):
         # todo
         x = self.up(x)
-        
-        #diff = x_down.size(2) - x.size(2)
-        
-        #x_down = x_down[:, :, diff:(x_down.size(2)-diff), diff:(x_down.size(3)-diff)]
-        
+
         #print(x.size())
         #print(x_down.size())
         
         x = torch.cat((x_down, x), dim = 1)
         #print(x.size())
         x = F.relu(self.conv1(x))
-        #self.batch = nn.BatchNorm2d(outC)
         x = self.conv2(x)
         
         return x

@@ -4,6 +4,8 @@ from os.path import join
 from optparse import OptionParser
 import numpy as np
 
+import time
+
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -18,7 +20,7 @@ from dataloader import DataLoader
 
 def train_net(net,
               epochs=100,
-              data_dir='data/cells/',
+              data_dir='data/',
               n_classes=3,
               lr=0.1,
               val_percent=0.1,
@@ -26,14 +28,16 @@ def train_net(net,
               gpu=False):
     loader = DataLoader(data_dir)
 
-    N_train = loader.n_train()
+    #N_train = loader.n_train()
+    N_train = 1
  
     ## change to adam 
-    optimizer = optim.SGD(net.parameters(),
-                            lr=lr,
-                            momentum=0.99,
-                            weight_decay=0.0005)
+    optimizer = optim.Adam(net.parameters(), 
+                           lr=lr,
+                           #momentum=0.99,
+                           weight_decay=0.0005)
 
+    training_time = time.time()
     for epoch in range(epochs):
         print('Epoch %d/%d' % (epoch + 1, epochs))
         print('Training...')
@@ -42,30 +46,22 @@ def train_net(net,
 
         epoch_loss = 0
 
-        for i, (img, label) in enumerate(loader):
-            shape = img.shape
-            #print(shape)
+        for i, (img,label) in enumerate(loader):
+            shape = img.shape  
             
-            # todo: create image tensor: (N,C,H,W) - (batch size=1,channels=1,height,width) 1,1,h,w
-            image = torch.tensor(img)
-            # = image.resize_((1, 1, image.size(0), image.size(1)))
-            
-            image = image.resize_((1, 1, 256, 256))
-            #print(image.size())
-            # todo: load image tensor to gpu
+            image = torch.tensor(img)   # [1,4,128,128]
+            label = torch.tensor(label) # [1,3,128,128]
+
             if gpu:
                 image = image.cuda()
                 label = label.cuda()
-            #image.to(device = device, dtype=torch.float32)
-
-            # todo: get prediction and getLoss()
             
             pred_label = net(image.float()) 
-            label = torch.tensor(label)
+            #label = torch.tensor(label)
 
-            pred_label = pred_label.reshape((pred_label.size(1), pred_label.size(2), pred_label.size(3)))
-            label = label.resize_(256,256)
-            label = label.reshape((1, label.size(0), label.size(1)))
+            #pred_label = pred_label.reshape((pred_label.size(1), pred_label.size(2), pred_label.size(3)))
+            #label = label.resize_(256,256)
+            #label = label.reshape((1, label.size(0), label.size(1)))
             
             #print(pred_label.size()) # torch.Size([2, 256, 256])       
             #print(label.size()) #torch.Size([1, 256, 256])
@@ -75,15 +71,19 @@ def train_net(net,
             
             loss.backward()
 
-            epoch_loss += loss.item()
+            #epoch_loss += loss.item()
+            
+            optimizer.step()
  
             print('Training sample %d / %d - Loss: %.6f' % (i+1, N_train, loss.item()))
 
             # optimize weights
 
-        torch.save(net.state_dict(), join(data_dir, 'checkpoints') + '/CP%d.pth' % (epoch + 1))
+        #torch.save(net.state_dict(), join(data_dir, 'checkpoints') + '/CP%d.pth' % (epoch + 1))
         print('Checkpoint %d saved !' % (epoch + 1))
         print('Epoch %d finished! - Loss: %.6f' % (epoch+1, epoch_loss / i))
+    
+    print('End of training. Time Taken: %d sec.' % (time.time() - training_time))
 
     # displays test images with original and predicted masks after training
     loader.setMode('test')
@@ -151,9 +151,9 @@ def choose(pred_label, true_labels):
     
 def get_args():
     parser = OptionParser()
-    parser.add_option('-e', '--epochs', dest='epochs', default=5, type='int', help='number of epochs')
-    parser.add_option('-c', '--n-classes', dest='n_classes', default=2, type='int', help='number of classes')
-    parser.add_option('-d', '--data-dir', dest='data_dir', default='data/cells/', help='data directory')
+    parser.add_option('-e', '--epochs', dest='epochs', default=1, type='int', help='number of epochs')
+    parser.add_option('-c', '--n-classes', dest='n_classes', default=3, type='int', help='number of classes')
+    parser.add_option('-d', '--data-dir', dest='data_dir', default='data/', help='data directory')
     parser.add_option('-g', '--gpu', action='store_true', dest='gpu', default=False, help='use cuda')
     parser.add_option('-l', '--load', dest='load', default=False, help='load file model')
 
