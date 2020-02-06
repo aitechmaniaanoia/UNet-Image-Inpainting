@@ -48,8 +48,8 @@ class DataLoader():
         
         image = np.array(image)  # [870,430,3]
         
-        inputs = [] 
-        outputs = [] 
+        inputs = np.zeros((crop_num*2, 4, 128, 128))
+        outputs = np.zeros((crop_num*2, 3, 128, 128))
         
         for i in range(0, crop_num):
             # crop small patch
@@ -89,16 +89,13 @@ class DataLoader():
             input1 = self.addrandomhole(output1)
             input2 = self.addrandomhole(output2)
             
-            inputs.append(input1)
-            inputs.append(input2)
+            inputs[i,:,:,:] = input1
+            inputs[i+crop_num,:,:,:] = input2
             
-            outputs.append(output1)
-            outputs.append(output2)
+            outputs[i,:,:,:] = output1
+            outputs[i+crop_num,:,:,:] = output2
             
-            #yield (input1, output1) 
-            #yield (input2, output2)
-        return (inputs, outputs)  # [160,4,128,128] [160,3,128,128] 
-    
+        yield (inputs, outputs)  # [160,4,128,128] [160,3,128,128] 
     
     def addrandomhole(self, image): 
         # image [1,3,128,128] RGB

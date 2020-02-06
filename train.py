@@ -10,6 +10,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 from torch import optim
+import torchvision
 
 from torchvision import transforms
 
@@ -20,7 +21,7 @@ from model import UNet
 from dataloader import DataLoader
 
 def train_net(net,
-              epochs=100,
+              epochs=1,
               data_dir='data/',
               n_classes=3,
               lr=0.1,
@@ -42,10 +43,12 @@ def train_net(net,
     # load data
     loader = DataLoader(data_dir)
 
-    N_train = loader.n_train()
-    #N_train = 1
+    #N_train = loader.n_train()
+    N_train = 160
  
-    ## change to adam 
+    ## change to MSEloss adam
+    criterion = nn.MSELoss()
+    
     optimizer = optim.Adam(net.parameters(), 
                            #lr=lr,
                            #momentum=0.99,
@@ -61,40 +64,48 @@ def train_net(net,
         epoch_loss = 0
         
         ## load data
-        (img, label) = enumerate(loader)
+        for j, (img, label) in enumerate(loader):
         
-        image = torch.tensor(img)   # [160,4,128,128]
-        label = torch.tensor(label) # [160,3,128,128]
+            image = torch.tensor(img)   # [160,4,128,128]
+            label = torch.tensor(label) # [160,3,128,128]
         
-        if gpu:
-            image = image.cuda()
-            label = label.cuda()
+            if gpu:
+                image = image.cuda()
+                label = label.cuda()
         
-        batch = 16
+            batch = 16
         
-        for i in range(0, int(N_train/batch)):
-            ## get inputs x with batch 16 [16,4,128,128] [16,3,128,128]
-            train_x = image[i*batch:(i+1)*batch,:,:,:]
-            train_y = label[i*batch:(i+1)*batch,:,:,:]
+            for i in range(0, int(N_train/batch)):
+                ## get inputs x with batch 16 [16,4,128,128] [16,3,128,128]
+                train_x = image[i*batch:(i+1)*batch,:,:,:]
+                train_y = label[i*batch:(i+1)*batch,:,:,:]
             
-            pred = net(train_x.float()) 
+                pred = net(train_x.float()) 
             
-            optimizer.zero_grad()
-            loss = optimizer(pred, train_y)
-            loss.backward()
-            epoch_loss += loss.item()
-            optimizer.step()
-            
-            print('Training sample %d / %d - Loss: %.6f' % ((i+1)*batch, N_train, loss.item()))
-        print('Epoch %d finished! - Loss: %.6f' % (epoch+1, epoch_loss / i))
+                optimizer.zero_grad()
+                
+                loss = criterion(pred, train_y.float())
+                loss.backward()
+                
+                optimizer.step()
+                
+                epoch_loss += loss.item()
+                print('Training sample %d / %d - Loss: %.6f' % ((i+1)*batch, N_train, loss.item()))
+            print('Epoch %d finished! - Loss: %.6f' % (epoch+1, epoch_loss/i))
         
     print('End of training. Time Taken: %d sec.' % (time.time() - training_time))
     
-    Image.fromarray(label[-1,:,:,:].astype('uint8')).save(train_groundtruth)
-    Image.fromarray(image[-1,:,:,:].astype('uint8')).save(train_input)
-    Image.fromarray(pred[-1,:,:,:].astype('uint8')).save(train_output)
-        
+    ## image should be [128,128,3]
+    ## Can't call numpy() on Variable that requires grad. Use var.detach().numpy() instead.
     
+    plot_label = np.resize(label[-1,:,:,:],(128,128,3))
+    plot_image = np.resize(image[-1,0:3,:,:],(128,128,3))
+    plot_pred = np.resize(pred[-1,:,:,:],(128,128,3))
+    
+    torchvision.utils.save_image(plot_label, os.path.join(train_groundtruth,'{}.png').format('train_groundtruth'))
+    torchvision.utils.save_image(plot_image, os.path.join(train_input,'{}.png').format('train_input'))
+    torchvision.utils.save_image(plot_pred, os.path.join(train_output,'{}.png').format('train_output'))
+     
     # displays test images with original and predicted masks after training
     loader.setMode('test')
     net.eval()
@@ -110,12 +121,15 @@ def train_net(net,
         
         # plot test result
         for j in range(len(img)):
-            self.plot(img[j,:,:,:], label[j,:,:,:], pred[j,:,:,:])
+            plot_label_test = np.resize(label[j,:,:,:],(128,128,3))
+            plot_img_test = np.resize(img[j,0:3,:,:],(128,128,3))
+            plot_pred = np.resize(pred_test[j,:,:,:],(128,128,3))
+            self.plot(plot_label_test, plot_img_test, plot_pred)
         
-    Image.fromarray(label[-1,:,:,:].astype('uint8')).save(test_groundtruth)
-    Image.fromarray(img_test[-1,:,:,:].astype('uint8')).save(test_input)
-    Image.fromarray(pred_test[-1,:,:,:].astype('uint8')).save(test_output)
-
+    torchvision.utils.save_image(plot_label_test, os.path.join(test_groundtruth,'{}.png').format('test_groundtruth'))
+    torchvision.utils.save_image(plot_img_test, os.path.join(test_input,'{}.png').format('test_input'))
+    torchvision.utils.save_image(plot_pred, os.path.join(test_output,'{}.png').format('test_output'))
+     
         
     def plot(self, img, label, pred):
         plt.subplot(1, 3, 1)
@@ -123,14 +137,9 @@ def train_net(net,
         plt.subplot(1, 3, 2)
         plt.imshow(label*255.)
         plt.subplot(1, 3, 3)
-        plt.imshow(pred.cpu().detach().numpy().squeeze()*255.)
+        #plt.imshow(pred.cpu().detach().numpy().squeeze()*255.)
+        plt.imshow(pred*255.)
         plt.show()
-        
-        
-        
-        
-        
-        
         
         # for _, (img, label) in enumerate(loader):
         #     shape = img.shape
@@ -150,19 +159,19 @@ def train_net(net,
         #     plt.show()
 
 #def getLoss(pred_label, target_label):
-    p = softmax(pred_label)
+    #p = softmax(pred_label)
     #print(p.size())
-    return cross_entropy(p, target_label)
+    #return cross_entropy(p, target_label)
 
 #def softmax(input):
     # todo: implement softmax function
     #input = input.resize_((2, input.size(2), input.size(3)))
-    exp = torch.exp(input)
-    sum_exp = torch.sum(exp,0)
+    #exp = torch.exp(input)
+    #sum_exp = torch.sum(exp,0)
     #sum_exp = sum_exp.resize_((1, 1, sum_exp.size(1), sum_exp.size(2)))
-    p = exp/sum_exp
+    #p = exp/sum_exp
     
-    return p
+    #return p
 
 #def cross_entropy(input, targets):
     # todo: implement cross entropy
@@ -173,28 +182,28 @@ def train_net(net,
     #targets = torch.tensor(targets)
     #targets = targets.resize_((1, targets.size(0), targets.size(1)))
     
-    M = input.size(1) * input.size(2)
-    ce = -1 * torch.sum(targets * torch.log(input))/M
+    #M = input.size(1) * input.size(2)
+    #ce = -1 * torch.sum(targets * torch.log(input))/M
 
-    return ce
+    #return ce
 
 # Workaround to use numpy.choose() with PyTorch
 #def choose(pred_label, true_labels):
-    size = pred_label.size()
-    ind = np.empty([size[2]*size[3],3], dtype=int)
-    i = 0
-    for x in range(size[2]):
-        for y in range(size[3]):
-            ind[i,:] = [true_labels[x,y], x, y]
-            i += 1
+    #size = pred_label.size()
+    #ind = np.empty([size[2]*size[3],3], dtype=int)
+    #i = 0
+    #for x in range(size[2]):
+    #    for y in range(size[3]):
+    #        ind[i,:] = [true_labels[x,y], x, y]
+    #        i += 1
 
-    pred = pred_label[0,ind[:,0],ind[:,1],ind[:,2]].view(size[2],size[3])
+    #pred = pred_label[0,ind[:,0],ind[:,1],ind[:,2]].view(size[2],size[3])
 
-    return pred
+    #return pred
     
 def get_args():
     parser = OptionParser()
-    parser.add_option('-e', '--epochs', dest='epochs', default=100, type='int', help='number of epochs')
+    parser.add_option('-e', '--epochs', dest='epochs', default=1, type='int', help='number of epochs')
     parser.add_option('-c', '--n-classes', dest='n_classes', default=3, type='int', help='number of classes')
     parser.add_option('-d', '--data-dir', dest='data_dir', default='data/', help='data directory')
     parser.add_option('-g', '--gpu', action='store_true', dest='gpu', default=False, help='use cuda')
